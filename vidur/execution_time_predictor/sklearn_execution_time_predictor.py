@@ -491,7 +491,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 target_col=f"time_stats.{model_name}.median",
             )
 
-        if self._replica_config.num_pipeline_stages > 1:
+        if self._replica_config.num_pipeline_stages > 1  or self._replica_scheduler_provider == "disaggregation":
             send_recv_df = self._load_send_recv_df(self._send_recv_input_file)
             send_recv_df = self._get_send_recv_df_with_derived_features(send_recv_df)
 
@@ -601,7 +601,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             "add",
         ]
 
-        if self._replica_config.num_pipeline_stages > 1:
+        if self._replica_config.num_pipeline_stages > 1 or self._replica_scheduler_provider == "disaggregation":
             model_names.append("send_recv")
 
         if self._replica_config.tensor_parallel_size > 1:
@@ -821,6 +821,19 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             return self._predictions["send_recv"][(batch._total_num_tokens_rounded,)]
         except KeyError as e:
             logger.error(f"Failed to get send_recv prediction for batch {batch}")
+            raise e
+
+    def get_kvcache_transfer_time(self, batch: Batch) -> float:
+        try:
+            max_transfer_time = 0.0
+            for request in batch.requests_without_kvcache:
+                # prefill tokens + first token
+                rounded_tokens = ((request.num_prefill_tokens+1) + 7) // 8 * 8
+                transfer_time = self._predictions["send_recv"][(rounded_tokens,)]
+                max_transfer_time = max(max_transfer_time, transfer_time)
+            return max_transfer_time
+        except Exception as e:
+            logger.error(f"Failed to calculate kvcache transfer time for batch {batch}: {e}")
             raise e
 
     def _get_attention_rope_execution_time(self, batch: Batch) -> float:

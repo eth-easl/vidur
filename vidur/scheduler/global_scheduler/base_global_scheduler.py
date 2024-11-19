@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import math
 from typing import Dict, List, Tuple
 
 from vidur.config import SimulationConfig
@@ -16,7 +17,7 @@ class BaseGlobalScheduler(ABC):
 
         self._num_replicas = len(self._replicas)
 
-        execution_time_predictor = ExecutionTimePredictorRegistry.get(
+        self._execution_time_predictor = ExecutionTimePredictorRegistry.get(
             config.execution_time_predictor_config.get_type(),
             predictor_config=config.execution_time_predictor_config,
             replica_config=config.cluster_config.replica_config,
@@ -31,12 +32,18 @@ class BaseGlobalScheduler(ABC):
                 request_generator_config=config.request_generator_config,
                 replica=replica,
                 num_stages=replica.num_pipeline_stages,
-                execution_time_predictor=execution_time_predictor,
+                execution_time_predictor=self._execution_time_predictor,
             )
             for replica_id, replica in replicas.items()
         }
         self._request_queue = []
 
+        if config.cluster_config.prompt_pool_ratio:
+            assert 0 < config.cluster_config.prompt_pool_ratio < 1, "prompt_pool_ratio must be between 0 and 1 (exclusive)."
+            self._prompt_pool_ratio = config.cluster_config.prompt_pool_ratio
+            self._prompt_pool_size = max(1, math.floor(self._num_replicas * self._prompt_pool_ratio))
+        else:
+            self._prompt_pool_ratio = None
     def sort_requests(self) -> None:
         self._request_queue.sort(key=lambda request: request._arrived_at)
 
@@ -56,6 +63,9 @@ class BaseGlobalScheduler(ABC):
             replica_scheduler.is_empty()
             for replica_scheduler in self._replica_schedulers.values()
         )
+
+    def get_execution_time_predictor(self):
+        return self._execution_time_predictor
 
     @abstractmethod
     def schedule(self) -> List[Tuple[int, Request]]:

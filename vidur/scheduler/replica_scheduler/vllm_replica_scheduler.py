@@ -16,6 +16,7 @@ class VLLMReplicaScheduler(BaseReplicaScheduler):
         # For vLLM and its derivatives, we only need to set a loose max batch size
         # Memory requirements are handled explicitly by the scheduler
         self._max_micro_batch_size = self._config.batch_size_cap // self._num_stages
+        # The threshold used for memory swapping
         self._watermark_blocks = int(
             self._config.watermark_blocks_fraction * self._config.num_blocks
         )
@@ -23,6 +24,7 @@ class VLLMReplicaScheduler(BaseReplicaScheduler):
     def on_batch_end(self, batch: Batch) -> None:
         self._num_running_batches -= 1
 
+        # iteration-level scheduling
         for request in batch.requests:
             if request.completed:
                 self.free(request.id)
@@ -32,6 +34,7 @@ class VLLMReplicaScheduler(BaseReplicaScheduler):
     def _can_allocate_request(self, request: Request) -> bool:
         if request.id not in self._allocation_map:
             # new request
+            # for prefill stage
             num_required_blocks = ceil(
                 (request.num_prefill_tokens) / self._config.block_size
             )
@@ -43,6 +46,7 @@ class VLLMReplicaScheduler(BaseReplicaScheduler):
             )
 
         # vllm requires at least one block to be available
+        # for decode stage
         return self._config.num_blocks - self._num_allocated_blocks >= 1
 
     def _allocate_request(self, request: Request) -> None:
@@ -70,6 +74,7 @@ class VLLMReplicaScheduler(BaseReplicaScheduler):
         num_tokens = []
         num_batch_tokens = 0
 
+        # prioritize prefill
         while self._request_queue:
             request = self._request_queue[0]
 
@@ -108,13 +113,17 @@ class VLLMReplicaScheduler(BaseReplicaScheduler):
 
             request = self._preempted_requests.pop(0)
 
+            # if cannot run the next preempted request
             while not self._can_allocate_request(request):
                 if self._preempted_requests:
+                    # select a victim (the latest one) from preempted requests
                     victim_request = self._preempted_requests.pop(-1)
                     victim_request.restart()
                     self.free(victim_request.id)
+                    # put at the first of the request queue
                     self._request_queue = [victim_request] + self._request_queue
                 else:
+                    # if no more preempted requests
                     request.restart()
                     self.free(request.id)
                     self._request_queue = [request] + self._request_queue

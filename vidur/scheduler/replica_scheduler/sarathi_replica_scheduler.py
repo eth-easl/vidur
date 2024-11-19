@@ -93,6 +93,7 @@ class SarathiReplicaScheduler(BaseReplicaScheduler):
 
         # preempted requests could contain multiple requests which have
         # partial prefills completed, so we need to be careful
+        # add requests in decode stage into the batch
         while self._preempted_requests:
             if len(requests) == self._max_micro_batch_size:
                 break
@@ -129,6 +130,7 @@ class SarathiReplicaScheduler(BaseReplicaScheduler):
                 requests.append(request)
                 num_tokens.append(next_num_tokens)
 
+        # add requests in prefill stage into the batch
         for request in running_prefills:
             assert not request.is_prefill_complete
 
@@ -153,6 +155,7 @@ class SarathiReplicaScheduler(BaseReplicaScheduler):
         )
         skipped_requests = []
 
+        # add new requests
         while self._request_queue:
             if len(self._allocation_map) == self._config.batch_size_cap:
                 break

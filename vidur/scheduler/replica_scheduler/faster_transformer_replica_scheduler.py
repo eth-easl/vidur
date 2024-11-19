@@ -16,10 +16,13 @@ class FasterTransformerReplicaScheduler(BaseReplicaScheduler):
         self._num_running_batches -= 1
 
         if batch.all_requests_completed:
+            # if all requests in the batch are completed
             # free memory for all requests at once
             self.free_batch(batch)
             self.free(*self._pending_free_map.pop(batch.id, []))
         else:
+            # otherwise put the batch into preempted_batches list
+            # note that the entire batch are added
             self._preempted_batches.append(batch)
 
     def _generate_next_batch_from_preempted(self, preempted_batch: Batch) -> Batch:
@@ -39,6 +42,8 @@ class FasterTransformerReplicaScheduler(BaseReplicaScheduler):
         return Batch(self._replica_id, requests, num_tokens)
 
     def _get_next_batch(self) -> Batch:
+        # first check if there are preempted batches
+        # request level scheduling
         if self._preempted_batches:
             preempted_batch = self._preempted_batches.pop(0)
             return self._generate_next_batch_from_preempted(preempted_batch)
@@ -46,6 +51,8 @@ class FasterTransformerReplicaScheduler(BaseReplicaScheduler):
         requests = []
         num_tokens = []
 
+        # if no preempted batches
+        # batch new requests
         while self._request_queue:
             if len(requests) == self._max_batch_size:
                 break

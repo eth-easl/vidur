@@ -59,6 +59,8 @@ class Request(BaseEntity):
 
         self._num_restarts = 0
 
+        self._assigned_replicas = None
+
     @property
     def size(self) -> Tuple[int, int]:
         return (self._num_prefill_tokens, self._num_decode_tokens)
@@ -199,6 +201,10 @@ class Request(BaseEntity):
     def has_started_decode(self) -> bool:
         return self._num_processed_tokens > self._num_prefill_tokens + 1
 
+    @property
+    def assigned_replicas(self) -> dict:
+        return self._assigned_replicas
+
     def on_batch_schedule(
         self,
         time: float,
@@ -307,3 +313,6 @@ class Request(BaseEntity):
         self._is_prefill_complete = False
 
         self._num_restarts += 1
+
+    def assign(self, replicas: dict):
+        self._assigned_replicas = replicas

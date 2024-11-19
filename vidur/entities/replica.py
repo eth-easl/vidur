@@ -1,4 +1,5 @@
 from math import ceil
+from typing import Optional
 
 from vidur.config import BaseRequestGeneratorConfig, ReplicaConfig
 from vidur.entities.base_entity import BaseEntity
@@ -12,6 +13,7 @@ class Replica(BaseEntity):
         self,
         replica_config: ReplicaConfig,
         generator_config: BaseRequestGeneratorConfig,
+        replica_type: str = "mixed"
     ) -> None:
         self._id = Replica.generate_id()
 
@@ -19,6 +21,8 @@ class Replica(BaseEntity):
         self._model_config = replica_config.model_config
         self._device_config = replica_config.device_config
         self._generator_config = generator_config
+        self._replica_type = replica_type
+        assert self._replica_type in ("mixed", "prompt", "token"), "replica_type must be 'prompt', 'token', or 'mixed'."
 
         assert (
             self._model_config.num_layers % self._replica_config.num_pipeline_stages
@@ -105,9 +109,14 @@ class Replica(BaseEntity):
     def per_device_flops(self) -> float:
         return self._device_config.fp16_tflops * 2**40
 
+    @property
+    def replica_type(self) -> str:
+        return self._replica_type
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
+            "replica_type": self.replica_type,
             "num_layers": self.num_layers,
             "num_q_heads": self.num_q_heads,
             "num_kv_heads": self.num_kv_heads,

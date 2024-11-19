@@ -104,6 +104,7 @@ class JobConfig:
         num_tensor_parallel_workers: int,
         num_pipeline_stages: int,
         batch_size: int,
+        prompt_pool_ratio: float=0.5,
     ):
         self.model_config = model_config
         self.trace_config = trace_config
@@ -116,6 +117,8 @@ class JobConfig:
         self.num_replicas = self.cluster_config.num_gpus // self.num_workers
 
         self.start_qps = self.trace_config.start_qps
+
+        self.prompt_pool_ratio = prompt_pool_ratio
 
     def is_valid(self):
         return (
@@ -152,10 +155,12 @@ class JobConfig:
             "replica_config_num_pipeline_stages": self.num_pipeline_stages,
             "vllm_scheduler_config_batch_size_cap": self.batch_size,
             "lightllm_scheduler_config_batch_size_cap": self.batch_size,
+            "disaggregation_scheduler_config_batch_size_cap": self.batch_size,
             "orca_scheduler_config_batch_size_cap": self.batch_size,
             "faster_transformer_scheduler_config_batch_size_cap": self.batch_size,
             "sarathi_scheduler_config_batch_size_cap": self.batch_size,
             "cluster_config_num_replicas": self.num_replicas,
+            "cluster_config_prompt_pool_ratio": self.prompt_pool_ratio,
         }
 
     @classmethod

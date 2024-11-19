@@ -36,6 +36,33 @@ class ReplicaScheduleEvent(BaseEvent):
         for batch in self._batches:
             batch.on_schedule(self.time)
 
+                if replica_scheduler.replica_type == "token":
+            events = []
+            execution_time_predictor = scheduler.get_execution_time_predictor()
+            for request in replica_scheduler.restart_requests:
+                prompt_replica_id = request.assigned_replicas["prompt"]
+                scheduler.get_replica_scheduler(prompt_replica_id).add_request(request)
+                events.append(ReplicaScheduleEvent(self.time, prompt_replica_id))
+            replica_scheduler.clear_restart_requests()
+            for batch in self._batches:
+                for request in batch.requests_without_kvcache:
+                    prompt_replica_scheduler = scheduler.get_replica_scheduler(request.assigned_replicas["prompt"])
+                    prompt_replica_scheduler.free(request.id)
+                    events.append(
+                        ReplicaScheduleEvent(
+                            self.time,
+                            request.assigned_replicas["prompt"]
+                    ))
+                kv_cache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(batch)
+                events.append(
+                    BatchStageArrivalEvent(
+                        self.time + kv_cache_transfer_time,
+                        self._replica_id,
+                        0,  # stage_id
+                        batch,
+                ))
+            return events
+
         return [
             BatchStageArrivalEvent(
                 self.time,

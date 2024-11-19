@@ -31,6 +31,8 @@ class BaseReplicaScheduler(ABC):
         self._replica_id = replica.id
         self._num_stages = num_stages
 
+        self._replica_type = replica.replica_type
+
         self._max_blocks_per_sequence = (
             self._request_generator_config.max_tokens // self._config.block_size
         )
@@ -79,6 +81,10 @@ class BaseReplicaScheduler(ABC):
     @property
     def memory_usage_percent(self) -> int:
         return (self._num_allocated_blocks * 100) / self._config.num_blocks
+
+    @property
+    def replica_type(self) -> str:
+        return self._replica_type
 
     def is_empty(self) -> bool:
         return (

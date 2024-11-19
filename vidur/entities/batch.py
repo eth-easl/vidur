@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from vidur.entities.base_entity import BaseEntity
 from vidur.entities.request import Request
@@ -32,6 +32,7 @@ class Batch(BaseEntity):
         replica_id: int,
         requests: List[Request],
         num_tokens: List[int],
+        requests_without_kvcache: Optional[List[Request]]=None
     ) -> None:
         self._id = Batch.generate_id()
         self._replica_id = replica_id
@@ -52,6 +53,8 @@ class Batch(BaseEntity):
         self._completed_at = None
         self._scheduled = False
         self._completed = False
+
+        self._requests_without_kvcache = requests_without_kvcache
 
     @property
     def replica_id(self) -> int:
@@ -110,6 +113,10 @@ class Batch(BaseEntity):
     @property
     def all_requests_completed(self) -> bool:
         return all([request.completed for request in self._requests])
+
+    @property
+    def requests_without_kvcache(self) -> Optional[List[Request]]:
+        return self._requests_without_kvcache
 
     def on_schedule(
         self,

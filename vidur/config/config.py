@@ -283,6 +283,17 @@ class VllmSchedulerConfig(BaseReplicaSchedulerConfig):
     def get_type():
         return ReplicaSchedulerType.VLLM
 
+@dataclass
+class DisaggregationSchedulerConfig(BaseReplicaSchedulerConfig):
+    # Implement based on vllm
+    max_tokens_in_batch: int = field(
+        default=4096,
+        metadata={"help": "Maximum tokens in batch for Disaggregation."},
+    )
+
+    @staticmethod
+    def get_type():
+        return ReplicaSchedulerType.DISAGGREGATION
 
 @dataclass
 class LightllmSchedulerConfig(BaseReplicaSchedulerConfig):
@@ -621,7 +632,10 @@ class ClusterConfig:
         default_factory=SarathiSchedulerConfig,
         metadata={"help": "Replica scheduler config."},
     )
-
+    prompt_pool_ratio: Optional[float] = field(
+        default=None,
+        metadata={"help": "Ratio of prompt pool relative to token pool."},
+    )
 
 @dataclass
 class SimulationConfig(ABC):

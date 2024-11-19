@@ -1,4 +1,5 @@
 import json
+import math
 
 from vidur.config import BaseRequestGeneratorConfig, ClusterConfig, MetricsConfig
 from vidur.entities.base_entity import BaseEntity
@@ -24,9 +25,22 @@ class Cluster(BaseEntity):
         # Init replica object handles
         self._replicas = {}
 
-        for _ in range(self._config.num_replicas):
-            replica = Replica(self._config.replica_config, generator_config)
-            self._replicas[replica.id] = replica
+        if cluster_config.prompt_pool_ratio:
+            assert 0 < cluster_config.prompt_pool_ratio < 1, "prompt_pool_ratio must be between 0 and 1 (exclusive)."
+            self._prompt_pool_ratio = cluster_config.prompt_pool_ratio
+            self._prompt_pool_size = max(1, math.floor(cluster_config.num_replicas * self._prompt_pool_ratio))
+            for i in range(self._config.num_replicas):
+                if i < self._prompt_pool_size:
+                    replica_type = "prompt"
+                else:
+                    replica_type = "token"
+                replica = Replica(self._config.replica_config, generator_config, replica_type)
+                self._replicas[replica._id] = replica
+        else:
+            self._prompt_pool_ratio = None
+            for _ in range(self._config.num_replicas):
+                replica = Replica(self._config.replica_config, generator_config)
+                self._replicas[replica.id] = replica
 
         if metrics_config.write_json_trace:
             self._write_cluster_info_to_file()

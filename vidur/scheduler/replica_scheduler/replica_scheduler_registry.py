@@ -13,6 +13,9 @@ from vidur.scheduler.replica_scheduler.sarathi_replica_scheduler import (
 from vidur.scheduler.replica_scheduler.vllm_replica_scheduler import (
     VLLMReplicaScheduler,
 )
+from vidur.scheduler.replica_scheduler.disaggregation_replica_scheduler import (
+    DisaggregationReplicaScheduler,
+)
 from vidur.types import ReplicaSchedulerType
 from vidur.utils.base_registry import BaseRegistry
 
@@ -29,4 +32,7 @@ ReplicaSchedulerRegistry.register(ReplicaSchedulerType.SARATHI, SarathiReplicaSc
 ReplicaSchedulerRegistry.register(ReplicaSchedulerType.VLLM, VLLMReplicaScheduler)
 ReplicaSchedulerRegistry.register(
     ReplicaSchedulerType.LIGHTLLM, LightLLMReplicaScheduler
+)
+ReplicaSchedulerRegistry.register(
+    ReplicaSchedulerType.DISAGGREGATION, DisaggregationReplicaScheduler
 )

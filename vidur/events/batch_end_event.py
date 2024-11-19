@@ -2,6 +2,7 @@ from typing import List
 
 from vidur.entities import Batch
 from vidur.events import BaseEvent
+from vidur.events.request_prefill_end_event import RequestPrefillEndEvent
 from vidur.logger import init_logger
 from vidur.metrics import MetricsStore
 from vidur.scheduler import BaseGlobalScheduler
@@ -30,6 +31,10 @@ class BatchEndEvent(BaseEvent):
         metrics_store.on_batch_end(
             self.time, self._batch, self._replica_id, memory_usage_percent
         )
+
+        if replica_scheduler.replica_type == "prompt":
+            events = [RequestPrefillEndEvent(self.time, request) for request in self._batch.requests]
+            return events + [ReplicaScheduleEvent(self.time, self._replica_id)]
 
         return [ReplicaScheduleEvent(self.time, self._replica_id)]
 

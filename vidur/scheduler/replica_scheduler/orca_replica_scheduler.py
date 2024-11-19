@@ -14,6 +14,8 @@ class OrcaReplicaScheduler(BaseReplicaScheduler):
     def on_batch_end(self, batch: Batch) -> None:
         self._num_running_batches -= 1
 
+        # iteration-level scheduling
+        # completed requests in the batch may return
         for request in batch.requests:
             if request.completed:
                 self.free(request.id)
@@ -24,6 +26,8 @@ class OrcaReplicaScheduler(BaseReplicaScheduler):
         requests = []
         num_tokens = []
 
+        # selective batching -> requests with different stages can be batched here
+        # still consider preempted requests first
         # all preempted_requests will have prefill completed
         while self._preempted_requests:
             if len(requests) == self._max_batch_size:
@@ -38,6 +42,7 @@ class OrcaReplicaScheduler(BaseReplicaScheduler):
             if len(requests) == self._max_batch_size:
                 break
 
+            # pre-allocate memory space based on the maximum
             if not self.can_allocate(self._max_blocks_per_sequence):
                 break
 
