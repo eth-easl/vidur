@@ -2,6 +2,7 @@ import os
 from functools import reduce
 from typing import Dict, List
 
+from matplotlib import pyplot as plt
 import pandas as pd
 import plotly_express as px
 import wandb
@@ -293,13 +294,21 @@ class MetricsStore:
                 },
                 step=0,
             )
+        # if self._config.store_plots:
+        #     fig = px.bar(
+        #         x=list(data.keys()),
+        #         y=list(data.values()),
+        #         labels={"x": x_label, "y": y_label},
+        #     )
+        #     fig.write_image(f"{base_path}/{plot_name}.png")
         if self._config.store_plots:
-            fig = px.bar(
-                x=list(data.keys()),
-                y=list(data.values()),
-                labels={"x": x_label, "y": y_label},
-            )
-            fig.write_image(f"{base_path}/{plot_name}.png")
+            plt.figure(figsize=(10, 6))
+            plt.bar(list(data.keys()), list(data.values()), color='blue')
+            plt.xlabel(x_label)
+            plt.ylabel(y_label)
+            plt.title(plot_name)
+            plt.savefig(f"{base_path}/{plot_name}.png")
+            plt.close()
 
     def _store_operation_metrics(self, base_plot_path: str):
         if not self._config.store_operation_metrics:
@@ -479,10 +488,10 @@ class MetricsStore:
         os.makedirs(dir_plot_path, exist_ok=True)
 
         self._store_request_metrics(dir_plot_path)
-        self._store_batch_metrics(dir_plot_path)
-        self._store_completion_metrics(dir_plot_path)
-        self._store_operation_metrics(dir_plot_path)
-        self._store_utilization_metrics(dir_plot_path)
+        # self._store_batch_metrics(dir_plot_path)
+        # self._store_completion_metrics(dir_plot_path)
+        # self._store_operation_metrics(dir_plot_path)
+        # self._store_utilization_metrics(dir_plot_path)
 
     @if_write_metrics
     def on_request_arrival(self, time: float, request: Request) -> None:

@@ -61,6 +61,8 @@ class Request(BaseEntity):
 
         self._assigned_replicas = None
 
+        self._kvcache_transfered = False
+
     @property
     def size(self) -> Tuple[int, int]:
         return (self._num_prefill_tokens, self._num_decode_tokens)
@@ -205,6 +207,14 @@ class Request(BaseEntity):
     def assigned_replicas(self) -> dict:
         return self._assigned_replicas
 
+    @property
+    def kvcache_transfered(self) -> bool:
+        return self._kvcache_transfered
+
+    @kvcache_transfered.setter
+    def kvcache_transfered(self, value: bool):
+        self._kvcache_transfered = value
+
     def on_batch_schedule(
         self,
         time: float,
@@ -311,6 +321,8 @@ class Request(BaseEntity):
         self._preempted = False
         self._completed = False
         self._is_prefill_complete = False
+
+        self._kvcache_transfered = False
 
         self._num_restarts += 1
 

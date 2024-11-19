@@ -86,6 +86,10 @@ class BaseReplicaScheduler(ABC):
     def replica_type(self) -> str:
         return self._replica_type
 
+    @property
+    def request_queue(self) -> List[Request]:
+        return self._request_queue
+
     def is_empty(self) -> bool:
         return (
             self.num_pending_requests == 0
@@ -121,6 +125,9 @@ class BaseReplicaScheduler(ABC):
             self._allocation_map[request_id] += num_blocks
 
         assert self._num_allocated_blocks <= self._config.num_blocks
+
+    def is_allocated(self, request_id: int) -> bool:
+        return request_id in self._allocation_map
 
     def free(self, *request_ids: List[int]) -> None:
         for request_id in request_ids:

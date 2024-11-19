@@ -105,6 +105,7 @@ class JobConfig:
         num_pipeline_stages: int,
         batch_size: int,
         prompt_pool_ratio: float=0.5,
+        kvcache_transfer_mode: str="pull"
     ):
         self.model_config = model_config
         self.trace_config = trace_config
@@ -119,6 +120,7 @@ class JobConfig:
         self.start_qps = self.trace_config.start_qps
 
         self.prompt_pool_ratio = prompt_pool_ratio
+        self.kvcache_transfer_mode = kvcache_transfer_mode
 
     def is_valid(self):
         return (
@@ -161,6 +163,7 @@ class JobConfig:
             "sarathi_scheduler_config_batch_size_cap": self.batch_size,
             "cluster_config_num_replicas": self.num_replicas,
             "cluster_config_prompt_pool_ratio": self.prompt_pool_ratio,
+            "cluster_config_kvcache_transfer_mode": self.kvcache_transfer_mode
         }
 
     @classmethod

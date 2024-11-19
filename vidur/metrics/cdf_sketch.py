@@ -1,3 +1,4 @@
+from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly_express as px
@@ -137,14 +138,22 @@ class CDFSketch:
                 step=0,
             )
 
+        # if self._save_plots:
+        #     fig = px.line(
+        #         df,
+        #         x=self._metric_name,
+        #         y="cdf",
+        #         markers=True,
+        #         labels={"x": x_axis_label},
+        #     )
+        #     fig.update_traces(marker=dict(color="red", size=2))
+        #     fig.write_image(f"{path}/{plot_name}.png")
         if self._save_plots:
-            fig = px.line(
-                df,
-                x=self._metric_name,
-                y="cdf",
-                markers=True,
-                labels={"x": x_axis_label},
-            )
-            fig.update_traces(marker=dict(color="red", size=2))
-            fig.write_image(f"{path}/{plot_name}.png")
+            plt.figure(figsize=(10, 6))
+            plt.plot(df[self._metric_name], df["cdf"], marker='o', color='red', markersize=4, linestyle='-')
+            plt.xlabel(x_axis_label)
+            plt.ylabel("CDF")
+            plt.title(plot_name)
+            plt.savefig(f"{path}/{plot_name}.png")
+            plt.close()
         self._save_df(df, path, plot_name)

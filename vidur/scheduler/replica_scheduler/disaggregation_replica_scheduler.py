@@ -22,6 +22,7 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
         )
 
         self.restart_requests: List[Request] = []
+        self.kvcache_transfer_mode = None
 
     def on_batch_end(self, batch: Batch) -> None:
         self._num_running_batches -= 1
@@ -152,12 +153,17 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
                     next_num_tokens = self._get_request_next_num_tokens(request)
                     requests.append(request)
                     num_tokens.append(next_num_tokens)
+            kvcache_transfers_in_progress = []
             while self._request_queue:
                 request = self._request_queue[0]
+                if self.kvcache_transfer_mode == "serialized-push" and not request.kvcache_transfered:
+                    request = self._request_queue.pop(0)
+                    kvcache_transfers_in_progress.append(request)
+                    continue
 
                 next_num_tokens = self._get_request_next_num_tokens(request)
 
-                if not self._can_allocate_request(request):
+                if not self.kvcache_transfer_mode == "serialized-push" and not self._can_allocate_request(request):
                     break
 
                 new_num_tokens = num_tokens + [next_num_tokens]
@@ -173,11 +179,15 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
 
                 request = self._request_queue.pop(0)
 
-                self._allocate_request(request)
+                if not self.kvcache_transfer_mode == "serialized-push":
+                    self._allocate_request(request)
+                    requests_without_kvcache.append(request)
+
                 requests.append(request)
                 num_tokens.append(next_num_tokens)
                 num_batch_tokens += next_num_tokens
-                requests_without_kvcache.append(request)
+            if self.kvcache_transfer_mode == "serialized-push":
+                self._request_queue = kvcache_transfers_in_progress + self._request_queue
             if requests:
                 return Batch(self._replica_id, requests, num_tokens, requests_without_kvcache)
 

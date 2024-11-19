@@ -37,13 +37,17 @@ class BaseGlobalScheduler(ABC):
             for replica_id, replica in replicas.items()
         }
         self._request_queue = []
-
         if config.cluster_config.prompt_pool_ratio:
             assert 0 < config.cluster_config.prompt_pool_ratio < 1, "prompt_pool_ratio must be between 0 and 1 (exclusive)."
             self._prompt_pool_ratio = config.cluster_config.prompt_pool_ratio
             self._prompt_pool_size = max(1, math.floor(self._num_replicas * self._prompt_pool_ratio))
+            self._kvcache_transfer_mode = config.cluster_config.kvcache_transfer_mode
+            for _, replica_scheduler in self._replica_schedulers.items():
+                replica_scheduler.kvcache_transfer_mode = self._kvcache_transfer_mode
         else:
             self._prompt_pool_ratio = None
+            self._kvcache_transfer_mode = None
+
     def sort_requests(self) -> None:
         self._request_queue.sort(key=lambda request: request._arrived_at)
 

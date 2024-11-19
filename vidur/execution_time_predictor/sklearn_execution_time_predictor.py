@@ -18,7 +18,7 @@ from vidur.config import (
     MetricsConfig,
     ReplicaConfig,
 )
-from vidur.entities import Batch
+from vidur.entities import Batch, Request
 from vidur.execution_time_predictor.base_execution_time_predictor import (
     BaseExecutionTimePredictor,
 )
@@ -823,17 +823,14 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             logger.error(f"Failed to get send_recv prediction for batch {batch}")
             raise e
 
-    def get_kvcache_transfer_time(self, batch: Batch) -> float:
+    def get_kvcache_transfer_time(self, request: Request) -> float:
         try:
-            max_transfer_time = 0.0
-            for request in batch.requests_without_kvcache:
-                # prefill tokens + first token
-                rounded_tokens = ((request.num_prefill_tokens+1) + 7) // 8 * 8
-                transfer_time = self._predictions["send_recv"][(rounded_tokens,)]
-                max_transfer_time = max(max_transfer_time, transfer_time)
-            return max_transfer_time
+            # prefill tokens + first token
+            rounded_tokens = ((request.num_prefill_tokens+1) + 7) // 8 * 8
+            transfer_time = self._predictions["send_recv"][(rounded_tokens,)]
+            return transfer_time
         except Exception as e:
-            logger.error(f"Failed to calculate kvcache transfer time for batch {batch}: {e}")
+            logger.error(f"Failed to calculate kvcache transfer time for request {request}: {e}")
             raise e
 
     def _get_attention_rope_execution_time(self, batch: Batch) -> float:

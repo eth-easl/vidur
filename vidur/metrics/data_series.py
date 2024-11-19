@@ -3,7 +3,7 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-import plotly_express as px
+import matplotlib.pyplot as plt
 import wandb
 
 from vidur.logger import init_logger
@@ -198,16 +198,24 @@ class DataSeries:
                 step=0,
             )
 
+        # if self._save_plots:
+        #     fig = px.line(
+        #         df,
+        #         x=self._x_name,
+        #         y=self._y_name,
+        #         markers=True,
+        #         labels={"x": y_axis_label},
+        #     )
+        #     fig.update_traces(marker=dict(color="red", size=2))
+        #     fig.write_image(f"{path}/{plot_name}.png")
         if self._save_plots:
-            fig = px.line(
-                df,
-                x=self._x_name,
-                y=self._y_name,
-                markers=True,
-                labels={"x": y_axis_label},
-            )
-            fig.update_traces(marker=dict(color="red", size=2))
-            fig.write_image(f"{path}/{plot_name}.png")
+            plt.figure(figsize=(10, 6))
+            plt.plot(df[self._x_name], df[self._y_name], marker='o', color='red', markersize=4)
+            plt.xlabel(y_axis_label)
+            plt.ylabel(self._y_name)
+            plt.title(plot_name)
+            plt.savefig(f"{path}/{plot_name}.png")
+            plt.close()
 
         self._save_df(df, path, plot_name)
 
@@ -247,12 +255,20 @@ class DataSeries:
                 step=0,
             )
 
+        # if self._save_plots:
+        #     fig = px.line(
+        #         df, x=self._y_name, y="cdf", markers=True, labels={"x": y_axis_label}
+        #     )
+        #     fig.update_traces(marker=dict(color="red", size=2))
+        #     fig.write_image(f"{path}/{plot_name}.png")
         if self._save_plots:
-            fig = px.line(
-                df, x=self._y_name, y="cdf", markers=True, labels={"x": y_axis_label}
-            )
-            fig.update_traces(marker=dict(color="red", size=2))
-            fig.write_image(f"{path}/{plot_name}.png")
+            plt.figure(figsize=(10, 6))
+            plt.plot(df[self._y_name], df["cdf"], marker='o', color='red', markersize=4)
+            plt.xlabel(y_axis_label)
+            plt.ylabel("CDF")
+            plt.title(plot_name)
+            plt.savefig(f"{path}/{plot_name}.png")
+            plt.close()
         self._save_df(df, path, plot_name)
 
     def plot_histogram(self, path: str, plot_name: str) -> None:
@@ -290,9 +306,22 @@ class DataSeries:
                 step=0,
             )
 
+        # if self._save_plots:
+        #     plt.figure(figsize=(10, 6))
+        #     plt.hist(df[self._y_name], bins=25)  # `df[self._y_name]` is the data you want to plot
+        #     plt.xlabel(self._y_name)
+        #     plt.ylabel("Frequency")
+        #     plt.title("Histogram")
+        #     plt.savefig(f"{path}/{plot_name}.png")  # Save the figure as a PNG image
+        #     plt.close()
         if self._save_plots:
-            fig = px.histogram(df, x=self._y_name, nbins=25)
-            fig.write_image(f"{path}/{plot_name}.png")
+            plt.figure(figsize=(10, 6))
+            plt.hist(df[self._y_name], bins=25)
+            plt.xlabel(self._y_name)
+            plt.ylabel("Frequency")
+            plt.title("Histogram")
+            plt.savefig(f"{path}/{plot_name}.png")
+            plt.close()
 
     def plot_differential(self, path: str, plot_name: str) -> None:
         if len(self._data_series) == 0:
@@ -330,9 +359,17 @@ class DataSeries:
                 step=0,
             )
 
+        # if self._save_plots:
+        #     fig = px.line(df, x=self._x_name, y=differential_col_name, markers=True)
+        #     fig.update_traces(marker=dict(color="red", size=2))
+        #     fig.write_image(f"{path}/{plot_name}.png")
         if self._save_plots:
-            fig = px.line(df, x=self._x_name, y=differential_col_name, markers=True)
-            fig.update_traces(marker=dict(color="red", size=2))
-            fig.write_image(f"{path}/{plot_name}.png")
+            plt.figure(figsize=(10, 6))
+            plt.plot(df[self._x_name], df[differential_col_name], marker='o', color='red', markersize=4)
+            plt.xlabel(self._x_name)
+            plt.ylabel(differential_col_name)
+            plt.title(plot_name)
+            plt.savefig(f"{path}/{plot_name}.png")
+            plt.close()
 
         self._save_df(df, path, plot_name)

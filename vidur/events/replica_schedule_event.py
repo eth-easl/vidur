@@ -1,6 +1,7 @@
 from typing import List
 
 from vidur.events import BaseEvent
+from vidur.events.kvcache_transfer_end_event import KVCacheTransferEndEvent
 from vidur.logger import init_logger
 from vidur.metrics import MetricsStore
 from vidur.scheduler import BaseGlobalScheduler
@@ -36,7 +37,7 @@ class ReplicaScheduleEvent(BaseEvent):
         for batch in self._batches:
             batch.on_schedule(self.time)
 
-                if replica_scheduler.replica_type == "token":
+        if replica_scheduler.replica_type == "token":
             events = []
             execution_time_predictor = scheduler.get_execution_time_predictor()
             for request in replica_scheduler.restart_requests:
@@ -44,23 +45,44 @@ class ReplicaScheduleEvent(BaseEvent):
                 scheduler.get_replica_scheduler(prompt_replica_id).add_request(request)
                 events.append(ReplicaScheduleEvent(self.time, prompt_replica_id))
             replica_scheduler.clear_restart_requests()
-            for batch in self._batches:
-                for request in batch.requests_without_kvcache:
-                    prompt_replica_scheduler = scheduler.get_replica_scheduler(request.assigned_replicas["prompt"])
-                    prompt_replica_scheduler.free(request.id)
-                    events.append(
-                        ReplicaScheduleEvent(
-                            self.time,
-                            request.assigned_replicas["prompt"]
-                    ))
-                kv_cache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(batch)
+            if scheduler._kvcache_transfer_mode == "serialized-push":
+                for request in replica_scheduler.request_queue:
+                    if not replica_scheduler.is_allocated(request.id) and replica_scheduler._can_allocate_request(request):
+                        execution_time_predictor = scheduler.get_execution_time_predictor()
+                        replica_scheduler._allocate_request(request)
+                        kv_cache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request)
+                        events.append(KVCacheTransferEndEvent(self.time + kv_cache_transfer_time, request, "gpu-gpu"))
+                        events.append(ReplicaScheduleEvent(self.time + kv_cache_transfer_time, self._replica_id))
                 events.append(
                     BatchStageArrivalEvent(
-                        self.time + kv_cache_transfer_time,
+                        self.time,
                         self._replica_id,
                         0,  # stage_id
                         batch,
                 ))
+                return events
+            for batch in self._batches:
+                max_kv_cache_transfer_time = 0.0
+                for request in batch.requests_without_kvcache:
+                    kv_cache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request)
+                    max_kv_cache_transfer_time = max(max_kv_cache_transfer_time, kv_cache_transfer_time)
+                    events.append(
+                        KVCacheTransferEndEvent(
+                            self.time + kv_cache_transfer_time,
+                            request,
+                            "gpu-gpu"
+                        )
+                    )
+                events.append(
+                    BatchStageArrivalEvent(
+                        self.time + max_kv_cache_transfer_time,
+                        self._replica_id,
+                        0,  # stage_id
+                        batch,
+                ))
+            # if cpu
+            # fetch data from cpu
+            # fetch data to cpu
             return events
 
         return [

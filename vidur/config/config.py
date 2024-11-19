@@ -636,6 +636,10 @@ class ClusterConfig:
         default=None,
         metadata={"help": "Ratio of prompt pool relative to token pool."},
     )
+    kvcache_transfer_mode: Optional[str] = field(
+        default="pull",
+        metadata={"help": "Mode of kvcache transfer between prompt machine and token machine."}
+    )
 
 @dataclass
 class SimulationConfig(ABC):
