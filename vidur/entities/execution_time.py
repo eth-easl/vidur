@@ -24,6 +24,7 @@ class ExecutionTime(BaseEntity):
         prepare_inputs_e2e_time: float,
         process_model_outputs_time: float,
         ray_comm_time: float,
+        kvcache_transfer_time_per_layer: dict
     ) -> None:
         self._id = ExecutionTime.generate_id()
 
@@ -55,6 +56,7 @@ class ExecutionTime(BaseEntity):
         self._prepare_inputs_e2e_time = prepare_inputs_e2e_time
         self._process_model_outputs_time = process_model_outputs_time
         self._ray_comm_time = ray_comm_time
+        self._kvcache_transfer_time_per_layer = kvcache_transfer_time_per_layer
 
     def _get_mlp_layer_execution_time(self) -> float:
         return (
@@ -197,3 +199,11 @@ class ExecutionTime(BaseEntity):
     def total_time(self) -> float:
         # return in seconds
         return self.model_time + self._get_cpu_overhead() * 1e-3
+
+    def get_layer_wise_kvcache_transfer_time(self, request) -> float:
+        # return in seconds
+        block_execution_time = self._get_block_execution_time()
+        if self._kvcache_transfer_time_per_layer[request._id] < block_execution_time:
+            return self.total_time + self._kvcache_transfer_time_per_layer[request._id]
+        else:
+            return block_execution_time + self._get_cpu_overhead() * 1e-3 + self._kvcache_transfer_time_per_layer[request._id] * self._num_layers_per_pipeline_stage

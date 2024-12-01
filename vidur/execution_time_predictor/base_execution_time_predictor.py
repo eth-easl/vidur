@@ -43,6 +43,10 @@ class BaseExecutionTimePredictor(ABC):
             tensor_parallel_communication_time = (
                 self._get_tensor_parallel_communication_time(batch)
             )
+        if self._replica_scheduler_provider == "disaggregation":
+            kvcache_transfer_time_per_layer = self._get_kvcache_transfer_time_per_layer(batch)
+        else:
+            kvcache_transfer_time_per_layer = None
 
         return ExecutionTime(
             self._num_layers_per_pipeline_stage,
@@ -65,6 +69,7 @@ class BaseExecutionTimePredictor(ABC):
             self._get_prepare_inputs_e2e_time(batch),
             self._get_process_model_outputs_time(batch),
             self._get_ray_comm_time(batch),
+            kvcache_transfer_time_per_layer
         )
 
     @abstractmethod
@@ -141,4 +146,8 @@ class BaseExecutionTimePredictor(ABC):
 
     @abstractmethod
     def _get_add_layer_act_execution_time(self, batch: Batch) -> float:
+        pass
+
+    @abstractmethod
+    def _get_kvcache_transfer_time_per_layer(self, batch: Batch) -> float:
         pass

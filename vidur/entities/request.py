@@ -62,6 +62,7 @@ class Request(BaseEntity):
         self._assigned_replicas = None
 
         self._kvcache_transfered = False
+        self.kvcache_transfer_time = 0.0
 
     @property
     def size(self) -> Tuple[int, int]:

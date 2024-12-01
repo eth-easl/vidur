@@ -1,5 +1,4 @@
 from math import ceil
-from typing import Optional
 
 from vidur.config import BaseRequestGeneratorConfig, ReplicaConfig
 from vidur.entities.base_entity import BaseEntity

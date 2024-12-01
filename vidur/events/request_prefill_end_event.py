@@ -2,6 +2,7 @@ from typing import List
 
 from vidur.entities.request import Request
 from vidur.events import BaseEvent
+from vidur.events.kvcache_transfer_end_event import KVCacheTransferEndEvent
 from vidur.logger import init_logger
 from vidur.metrics import MetricsStore
 from vidur.scheduler import BaseGlobalScheduler
@@ -25,7 +26,25 @@ class RequestPrefillEndEvent(BaseEvent):
             scheduler.get_replica_scheduler(self._request.assigned_replicas["prompt"]).free(self._request.id)
             return []
         token_replica_id = self._request.assigned_replicas["token"]
-        scheduler.get_replica_scheduler(token_replica_id).add_request(self._request)
+        token_replica_scheduler = scheduler.get_replica_scheduler(token_replica_id)
+        assert token_replica_scheduler.replica_type == "token"
+        token_replica_scheduler.add_request(self._request)
+        if scheduler._kvcache_transfer_mode == "layer-wise" and token_replica_scheduler.is_allocated(self._request._id):
+            return [
+                KVCacheTransferEndEvent(self._request.kvcache_transfer_time, self._request, "gpu-gpu"),
+                ReplicaScheduleEvent(self._request.kvcache_transfer_time, token_replica_id)
+            ]
+
+        if scheduler._kvcache_transfer_mode == "serialized-push":
+            if token_replica_scheduler._can_allocate_request(self._request):
+                # if serialized-push mode and memory available
+                execution_time_predictor = scheduler.get_execution_time_predictor()
+                token_replica_scheduler._allocate_request(self._request)
+                kv_cache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(self._request)
+                return [
+                    KVCacheTransferEndEvent(self.time + kv_cache_transfer_time, self._request, "gpu-gpu"),
+                    ReplicaScheduleEvent(self.time + kv_cache_transfer_time, token_replica_id)
+                ]
 
         return [
             ReplicaScheduleEvent(self.time, token_replica_id)

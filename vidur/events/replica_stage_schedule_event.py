@@ -44,6 +44,10 @@ class ReplicaStageScheduleEvent(BaseEvent):
         )
 
         self._is_last_stage = stage_scheduler.is_last_stage
+        if scheduler._kvcache_transfer_mode == "layer-wise":
+            for request in self._batch._requests:
+                request.kvcache_transfer_time = max(self.time, request.kvcache_transfer_time) \
+                    + execution_time.get_layer_wise_kvcache_transfer_time(request)
 
         return [
             BatchStageEndEvent(

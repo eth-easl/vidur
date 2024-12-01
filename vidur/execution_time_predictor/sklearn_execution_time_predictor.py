@@ -343,7 +343,6 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
     ) -> BaseEstimator:
         if len(df) == 0:
             raise Exception(f"Training data for model {model_name} is empty")
-
         model_hash = self._get_model_hash(model_name, df)
 
         cached_model = self._load_model_from_cache(model_name, model_hash)
@@ -491,7 +490,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 target_col=f"time_stats.{model_name}.median",
             )
 
-        if self._replica_config.num_pipeline_stages > 1  or self._replica_scheduler_provider == "disaggregation":
+        if self._replica_config.num_pipeline_stages > 1:
             send_recv_df = self._load_send_recv_df(self._send_recv_input_file)
             send_recv_df = self._get_send_recv_df_with_derived_features(send_recv_df)
 
@@ -499,6 +498,16 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 model_name="send_recv",
                 df=send_recv_df,
                 feature_cols=["num_tokens"],
+                target_col="time_stats.send_recv.median",
+            )
+
+        if self._replica_scheduler_provider == "disaggregation":
+            send_recv_df = self._load_send_recv_df(self._send_recv_input_file)
+
+            models["send_recv_disaggregation"] = self._train_model(
+                model_name="send_recv_disaggregation",
+                df=send_recv_df,
+                feature_cols=["size"],
                 target_col="time_stats.send_recv.median",
             )
 
@@ -601,8 +610,11 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             "add",
         ]
 
-        if self._replica_config.num_pipeline_stages > 1 or self._replica_scheduler_provider == "disaggregation":
+        if self._replica_config.num_pipeline_stages > 1:
             model_names.append("send_recv")
+
+        if self._replica_scheduler_provider == "disaggregation":
+            model_names.append("send_recv_disaggregation")
 
         if self._replica_config.tensor_parallel_size > 1:
             model_names.append("all_reduce")
@@ -612,7 +624,17 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
 
         for model_name in model_names:
             model = self._models[model_name]
-            predictions[model_name] = self._get_model_prediction(model_name, model, X)
+            if model_name == "send_recv_disaggregation":
+                stride = (2 * 2 * self._model_config.num_kv_heads
+                    * (self._model_config.embedding_dim // self._model_config.num_q_heads))
+                max_kvcache_size = (self._max_tokens + 1) * stride * self._model_config.num_layers
+                num_byte_range = np.arange(0, max_kvcache_size + 1, stride)
+
+                temp = pd.DataFrame({"size": num_byte_range})
+                predictions[model_name] = self._get_model_prediction(model_name, model, temp)
+                continue
+            else:
+                predictions[model_name] = self._get_model_prediction(model_name, model, X)
 
         return predictions
 
@@ -825,12 +847,35 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
 
     def get_kvcache_transfer_time(self, request: Request) -> float:
         try:
-            # prefill tokens + first token
-            rounded_tokens = ((request.num_prefill_tokens+1) + 7) // 8 * 8
-            transfer_time = self._predictions["send_recv"][(rounded_tokens,)]
+            kvcache_size = (
+                2  # 2 bytes per float
+                * 2  # one for key, one for value
+                * self._model_config.num_layers
+                * self._model_config.num_kv_heads
+                * (self._model_config.embedding_dim // self._model_config.num_q_heads)
+            ) * request.num_prefill_tokens
+            transfer_time = self._predictions["send_recv_disaggregation"][(kvcache_size,)]
             return transfer_time
         except Exception as e:
             logger.error(f"Failed to calculate kvcache transfer time for request {request}: {e}")
+            raise e
+
+    def _get_kvcache_transfer_time_per_layer(self, batch: Batch) -> float:
+        try:
+            kvcache_transfer_time = {}
+            for request in batch._requests:
+                # kvcache transfer time for one layer
+                kvcache_size = (
+                    2  # 2 bytes per float
+                    * 2  # one for key, one for value
+                    * self._model_config.num_kv_heads
+                    * (self._model_config.embedding_dim // self._model_config.num_q_heads)
+                ) * request.num_prefill_tokens
+                transfer_time = self._predictions["send_recv_disaggregation"][(kvcache_size,)]
+                kvcache_transfer_time[request._id] = transfer_time
+            return kvcache_transfer_time
+        except Exception as e:
+            logger.error(f"Failed to calculate kvcache transfer time for batch {batch}: {e}")
             raise e
 
     def _get_attention_rope_execution_time(self, batch: Batch) -> float:

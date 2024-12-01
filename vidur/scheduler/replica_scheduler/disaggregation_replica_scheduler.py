@@ -156,14 +156,16 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
             kvcache_transfers_in_progress = []
             while self._request_queue:
                 request = self._request_queue[0]
-                if self.kvcache_transfer_mode == "serialized-push" and not request.kvcache_transfered:
+                if (self.kvcache_transfer_mode == "serialized-push" or
+                    self.kvcache_transfer_mode == "layer-wise" ) \
+                    and not request.kvcache_transfered:
                     request = self._request_queue.pop(0)
                     kvcache_transfers_in_progress.append(request)
                     continue
 
                 next_num_tokens = self._get_request_next_num_tokens(request)
 
-                if not self.kvcache_transfer_mode == "serialized-push" and not self._can_allocate_request(request):
+                if self.kvcache_transfer_mode == "pull" and not self._can_allocate_request(request):
                     break
 
                 new_num_tokens = num_tokens + [next_num_tokens]
@@ -179,14 +181,17 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
 
                 request = self._request_queue.pop(0)
 
-                if not self.kvcache_transfer_mode == "serialized-push":
+                if self.kvcache_transfer_mode == "pull":
                     self._allocate_request(request)
                     requests_without_kvcache.append(request)
 
                 requests.append(request)
                 num_tokens.append(next_num_tokens)
                 num_batch_tokens += next_num_tokens
-            if self.kvcache_transfer_mode == "serialized-push":
+            for request in requests:
+                if request.id not in self._allocation_map:
+                    print(request.id)
+            if not self.kvcache_transfer_mode == "pull":
                 self._request_queue = kvcache_transfers_in_progress + self._request_queue
             if requests:
                 return Batch(self._replica_id, requests, num_tokens, requests_without_kvcache)

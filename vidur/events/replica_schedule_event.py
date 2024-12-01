@@ -45,7 +45,7 @@ class ReplicaScheduleEvent(BaseEvent):
                 scheduler.get_replica_scheduler(prompt_replica_id).add_request(request)
                 events.append(ReplicaScheduleEvent(self.time, prompt_replica_id))
             replica_scheduler.clear_restart_requests()
-            if scheduler._kvcache_transfer_mode == "serialized-push":
+            if not scheduler._kvcache_transfer_mode == "pull":
                 for request in replica_scheduler.request_queue:
                     if not replica_scheduler.is_allocated(request.id) and replica_scheduler._can_allocate_request(request):
                         execution_time_predictor = scheduler.get_execution_time_predictor()
@@ -84,6 +84,16 @@ class ReplicaScheduleEvent(BaseEvent):
             # fetch data from cpu
             # fetch data to cpu
             return events
+
+        if replica_scheduler.replica_type == "prompt" and scheduler._kvcache_transfer_mode == "layer-wise":
+            events = []
+            for batch in self._batches:
+                for request in batch._requests:
+                    token_replica_id = request.assigned_replicas["token"]
+                    token_replica_scheduler = scheduler.get_replica_scheduler(token_replica_id)
+                    if token_replica_scheduler._can_allocate_request(request):
+                        # if layer-wise and memory available
+                        token_replica_scheduler._allocate_request(request)
 
         return [
             BatchStageArrivalEvent(
