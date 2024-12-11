@@ -40,19 +40,21 @@ class ReplicaScheduleEvent(BaseEvent):
         if replica_scheduler.replica_type == "token":
             events = []
             execution_time_predictor = scheduler.get_execution_time_predictor()
+            # handle restarted requests
             for request in replica_scheduler.restart_requests:
                 prompt_replica_id = request.assigned_replicas["prompt"]
                 scheduler.get_replica_scheduler(prompt_replica_id).add_request(request)
                 events.append(ReplicaScheduleEvent(self.time, prompt_replica_id))
             replica_scheduler.clear_restart_requests()
-            if not scheduler._kvcache_transfer_mode == "pull":
+            if scheduler._kvcache_transfer_mode == "serialized" or scheduler._kvcache_transfer_mode == "layer-wise":
+                # load kvcache from prompt machine
                 for request in replica_scheduler.request_queue:
                     if not replica_scheduler.is_allocated(request.id) and replica_scheduler._can_allocate_request(request):
-                        execution_time_predictor = scheduler.get_execution_time_predictor()
                         replica_scheduler._allocate_request(request)
-                        kv_cache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request)
-                        events.append(KVCacheTransferEndEvent(self.time + kv_cache_transfer_time, request, "gpu-gpu"))
-                        events.append(ReplicaScheduleEvent(self.time + kv_cache_transfer_time, self._replica_id))
+                        kvcache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request, "gpu-gpu")
+                        request.kvcache_transfer_time["gpu-gpu"] = kvcache_transfer_time
+                        events.append(KVCacheTransferEndEvent(self.time + kvcache_transfer_time, request, "gpu-gpu"))
+                        events.append(ReplicaScheduleEvent(self.time + kvcache_transfer_time, self._replica_id))
                 events.append(
                     BatchStageArrivalEvent(
                         self.time,
@@ -61,32 +63,50 @@ class ReplicaScheduleEvent(BaseEvent):
                         batch,
                 ))
                 return events
-            for batch in self._batches:
-                max_kv_cache_transfer_time = 0.0
-                for request in batch.requests_without_kvcache:
-                    kv_cache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request)
-                    max_kv_cache_transfer_time = max(max_kv_cache_transfer_time, kv_cache_transfer_time)
+            if scheduler._kvcache_transfer_mode == "serialized-cpu" or scheduler._kvcache_transfer_mode == "layer-wise-cpu":
+                for request in replica_scheduler.request_queue:
+                    if not replica_scheduler.is_cpu_allocated(request.id) and replica_scheduler._can_cpu_allocate_request(request) and request.ready_for_transfer:
+                        replica_scheduler._cpu_allocate_request(request)
+                        kvcache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request, "cpu-cpu")
+                        events.append(KVCacheTransferEndEvent(self.time + kvcache_transfer_time, request, "cpu-cpu"))
+                        events.append(ReplicaScheduleEvent(self.time + kvcache_transfer_time, self._replica_id))
+                for batch in self._batches:
+                    max_kvcache_transfer_time = 0.0
+                    for request in batch.requests_without_kvcache:
+                        kvcache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request, "cpu-gpu")
+                        request.kvcache_transfer_time["cpu-gpu"] = kvcache_transfer_time
+                        max_kvcache_transfer_time = max(max_kvcache_transfer_time, kvcache_transfer_time)
                     events.append(
-                        KVCacheTransferEndEvent(
-                            self.time + kv_cache_transfer_time,
-                            request,
-                            "gpu-gpu"
+                        BatchStageArrivalEvent(
+                            self.time + max_kvcache_transfer_time,
+                            self._replica_id,
+                            0,  # stage_id
+                            batch,
+                    ))
+            if scheduler._kvcache_transfer_mode == "pull":
+                for batch in self._batches:
+                    max_kvcache_transfer_time = 0.0
+                    for request in batch.requests_without_kvcache:
+                        kvcache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request, "gpu-gpu")
+                        request.kvcache_transfer_time["gpu-gpu"] = kvcache_transfer_time
+                        max_kvcache_transfer_time = max(max_kvcache_transfer_time, kvcache_transfer_time)
+                        events.append(
+                            KVCacheTransferEndEvent(
+                                self.time + kvcache_transfer_time,
+                                request,
+                                "gpu-gpu"
+                            )
                         )
-                    )
-                events.append(
-                    BatchStageArrivalEvent(
-                        self.time + max_kv_cache_transfer_time,
-                        self._replica_id,
-                        0,  # stage_id
-                        batch,
-                ))
-            # if cpu
-            # fetch data from cpu
-            # fetch data to cpu
+                    events.append(
+                        BatchStageArrivalEvent(
+                            self.time + max_kvcache_transfer_time,
+                            self._replica_id,
+                            0,  # stage_id
+                            batch,
+                    ))
             return events
 
         if replica_scheduler.replica_type == "prompt" and scheduler._kvcache_transfer_mode == "layer-wise":
-            events = []
             for batch in self._batches:
                 for request in batch._requests:
                     token_replica_id = request.assigned_replicas["token"]
@@ -95,6 +115,11 @@ class ReplicaScheduleEvent(BaseEvent):
                         # if layer-wise and memory available
                         token_replica_scheduler._allocate_request(request)
 
+        if replica_scheduler.replica_type == "prompt" and scheduler._kvcache_transfer_mode == "layer-wise-cpu":
+            for batch in self._batches:
+                for request in batch._requests:
+                    if replica_scheduler._can_cpu_allocate_request(request):
+                        replica_scheduler._cpu_allocate_request(request)
         return [
             BatchStageArrivalEvent(
                 self.time,

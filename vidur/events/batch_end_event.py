@@ -35,6 +35,11 @@ class BatchEndEvent(BaseEvent):
         if replica_scheduler.replica_type == "prompt":
             events = [RequestPrefillEndEvent(self.time, request) for request in self._batch.requests]
             return events + [ReplicaScheduleEvent(self.time, self._replica_id)]
+        if replica_scheduler.replica_type == "token" and \
+            (scheduler._kvcache_transfer_mode == "layer-wise-cpu" or scheduler._kvcache_transfer_mode == "serialized-cpu"):
+            for request in self._batch.requests:
+                if request.completed:
+                    replica_scheduler.free_cpu(request.id)
 
         return [ReplicaScheduleEvent(self.time, self._replica_id)]
 

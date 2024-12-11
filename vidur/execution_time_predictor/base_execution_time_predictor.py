@@ -43,10 +43,11 @@ class BaseExecutionTimePredictor(ABC):
             tensor_parallel_communication_time = (
                 self._get_tensor_parallel_communication_time(batch)
             )
+        kvcache_transfer_time_per_layer = {}
         if self._replica_scheduler_provider == "disaggregation":
-            kvcache_transfer_time_per_layer = self._get_kvcache_transfer_time_per_layer(batch)
-        else:
-            kvcache_transfer_time_per_layer = None
+            kvcache_transfer_time_per_layer["gpu-gpu"] = self._get_kvcache_transfer_time_per_layer(batch, "gpu-gpu")
+            kvcache_transfer_time_per_layer["gpu-cpu"] = self._get_kvcache_transfer_time_per_layer(batch, "gpu-cpu")
+            kvcache_transfer_time_per_layer["cpu-cpu"] = self._get_kvcache_transfer_time_per_layer(batch, "cpu-cpu")
 
         return ExecutionTime(
             self._num_layers_per_pipeline_stage,

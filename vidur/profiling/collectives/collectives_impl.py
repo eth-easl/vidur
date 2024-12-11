@@ -22,20 +22,20 @@ class GraphedCollective:
         self._buffer = torch.empty(
             size=(size,),
             dtype=dtype,
-            device="cuda",
+            device="cuda" if torch.cuda.is_available() else "cpu"
         )
         self._gather_buffer = None
         if collective == "all_gather":
             self._gather_tensor = torch.empty(
                 size=(size * num_workers,),
                 dtype=dtype,
-                device="cuda",
+                device="cuda" if torch.cuda.is_available() else "cpu"
             )
         elif collective == "reduce_scatter":
             self._reduce_buffer = torch.empty(
                 size=(size * num_workers,),
                 dtype=dtype,
-                device="cuda",
+                device="cuda" if torch.cuda.is_available() else "cpu"
             )
 
         if not self._disable_graph:

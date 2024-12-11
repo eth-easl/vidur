@@ -39,6 +39,12 @@ def parse_args():
         choices=["all_reduce", "send_recv"],
         help="Collective to profile",
     )
+    parser.add_argument(
+        "--backend",
+        default="nccl",
+        choices=["nccl", "gloo"],
+        help="Backend to use for collective communication (nccl for GPU, gloo for CPU)."
+    )
     args = parser.parse_args()
 
     args.output_dir = f"{args.output_dir}/collective/{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"

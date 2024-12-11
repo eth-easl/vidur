@@ -504,8 +504,20 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
         if self._replica_scheduler_provider == "disaggregation":
             send_recv_df = self._load_send_recv_df(self._send_recv_input_file)
 
-            models["send_recv_disaggregation"] = self._train_model(
-                model_name="send_recv_disaggregation",
+            models["send_recv_gpu-gpu"] = self._train_model(
+                model_name="send_recv_gpu-gpu",
+                df=send_recv_df,
+                feature_cols=["size"],
+                target_col="time_stats.send_recv.median",
+            )
+            models["send_recv_gpu-cpu"] = self._train_model(
+                model_name="send_recv_gpu-cpu",
+                df=send_recv_df,
+                feature_cols=["size"],
+                target_col="time_stats.send_recv.median",
+            )
+            models["send_recv_cpu-cpu"] = self._train_model(
+                model_name="send_recv_cpu-gpu",
                 df=send_recv_df,
                 feature_cols=["size"],
                 target_col="time_stats.send_recv.median",
@@ -614,7 +626,9 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             model_names.append("send_recv")
 
         if self._replica_scheduler_provider == "disaggregation":
-            model_names.append("send_recv_disaggregation")
+            model_names.append("send_recv_gpu-gpu")
+            model_names.append("send_recv_gpu-cpu")
+            model_names.append("send_recv_cpu-cpu")
 
         if self._replica_config.tensor_parallel_size > 1:
             model_names.append("all_reduce")
@@ -624,7 +638,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
 
         for model_name in model_names:
             model = self._models[model_name]
-            if model_name == "send_recv_disaggregation":
+            if model_name == "send_recv_gpu-gpu" or model_name == "send_recv_gpu-cpu" or model_name == "send_recv_cpu-cpu":
                 stride = (2 * 2 * self._model_config.num_kv_heads
                     * (self._model_config.embedding_dim // self._model_config.num_q_heads))
                 max_kvcache_size = (self._max_tokens + 1) * stride * self._model_config.num_layers
@@ -845,7 +859,7 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
             logger.error(f"Failed to get send_recv prediction for batch {batch}")
             raise e
 
-    def get_kvcache_transfer_time(self, request: Request) -> float:
+    def get_kvcache_transfer_time(self, request: Request, mode="gpu-gpu") -> float:
         try:
             kvcache_size = (
                 2  # 2 bytes per float
@@ -854,13 +868,20 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                 * self._model_config.num_kv_heads
                 * (self._model_config.embedding_dim // self._model_config.num_q_heads)
             ) * request.num_prefill_tokens
-            transfer_time = self._predictions["send_recv_disaggregation"][(kvcache_size,)]
+            if mode == "gpu-gpu":
+                transfer_time = self._predictions["send_recv_gpu-gpu"][(kvcache_size,)]
+            elif mode == "gpu-cpu" or "cpu-gpu":
+                transfer_time = self._predictions["send_recv_gpu-cpu"][(kvcache_size,)]
+            elif mode == "cpu-cpu":
+                transfer_time = self._predictions["send_recv_cpu-cpu"][(kvcache_size,)]
+            else:
+                transfer_time = 0.0
             return transfer_time
         except Exception as e:
             logger.error(f"Failed to calculate kvcache transfer time for request {request}: {e}")
             raise e
 
-    def _get_kvcache_transfer_time_per_layer(self, batch: Batch) -> float:
+    def _get_kvcache_transfer_time_per_layer(self, batch: Batch, mode="gpu-gpu") -> float:
         try:
             kvcache_transfer_time = {}
             for request in batch._requests:
@@ -871,7 +892,12 @@ class SklearnExecutionTimePredictor(BaseExecutionTimePredictor):
                     * self._model_config.num_kv_heads
                     * (self._model_config.embedding_dim // self._model_config.num_q_heads)
                 ) * request.num_prefill_tokens
-                transfer_time = self._predictions["send_recv_disaggregation"][(kvcache_size,)]
+                if mode == "gpu-gpu":
+                    transfer_time = self._predictions["send_recv_gpu-gpu"][(kvcache_size,)]
+                elif mode == "gpu-cpu":
+                    transfer_time = self._predictions["send_recv_gpu-cpu"][(kvcache_size,)]
+                else:
+                    transfer_time = 0.0
                 kvcache_transfer_time[request._id] = transfer_time
             return kvcache_transfer_time
         except Exception as e:

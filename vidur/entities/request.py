@@ -62,7 +62,8 @@ class Request(BaseEntity):
         self._assigned_replicas = None
 
         self._kvcache_transfered = False
-        self.kvcache_transfer_time = 0.0
+        self.kvcache_transfer_time = {}
+        self.ready_for_transfer = False
 
     @property
     def size(self) -> Tuple[int, int]:
@@ -326,6 +327,10 @@ class Request(BaseEntity):
         self._kvcache_transfered = False
 
         self._num_restarts += 1
+
+    def restart_decode(self):
+        logger.debug(f"Restarting decode of request {self._id}")
+        self._num_processed_tokens = self._num_prefill_tokens + 1
 
     def assign(self, replicas: dict):
         self._assigned_replicas = replicas

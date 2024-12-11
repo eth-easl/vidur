@@ -24,6 +24,10 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
         self.restart_requests: List[Request] = []
         self.kvcache_transfer_mode = None
 
+        self.cpu_allocation_map = {}
+        self.cpu_num_allocated_blocks = 0
+        self.cpu_num_blocks = self._config.num_blocks
+
     def on_batch_end(self, batch: Batch) -> None:
         self._num_running_batches -= 1
         # iteration-level scheduling
@@ -60,6 +64,20 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
             # for decode stage
             return self._config.num_blocks - self._num_allocated_blocks - new_blocks_required >= 1
 
+    def _can_cpu_allocate_request(self, request: Request) -> bool:
+        # if self._replica_type == "prompt":
+        num_required_blocks = ceil(
+            (request.num_prefill_tokens) / self._config.block_size
+        )
+        return (
+            self._config.num_blocks
+            - self._num_allocated_blocks
+            >= num_required_blocks
+        )
+
+    def is_cpu_allocated(self, request_id: int) -> bool:
+        return request_id in self.cpu_allocation_map
+
     def _allocate_request(self, request: Request) -> None:
         if request.id not in self._allocation_map:
             # new request
@@ -86,6 +104,20 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
             return
 
         self.allocate(request.id, 1)
+
+    def _cpu_allocate_request(self, request: Request) -> None:
+        num_required_blocks = ceil(
+            (request.num_prefill_tokens) / self._config.block_size
+        )
+        self.cpu_num_allocated_blocks += num_required_blocks
+        self.cpu_allocation_map[request.id] = num_required_blocks
+
+    def is_cpu_allocated(self, request_id: int) -> bool:
+        return request_id in self.cpu_allocation_map
+
+    def free_cpu(self, request_id: int) -> None:
+        num_blocks = self.cpu_allocation_map.pop(request_id)
+        self.cpu_num_allocated_blocks -= num_blocks
 
     def _get_next_batch(self) -> Batch:
         requests = []
@@ -136,16 +168,21 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
                     if self._preempted_requests:
                         # select a victim (the latest one) from preempted requests
                         victim_request = self._preempted_requests.pop(-1)
-                        victim_request.restart()
+                        if (self.kvcache_transfer_mode == "serialized-cpu"
+                            or self.kvcache_transfer_mode == "layer-wise-cpu"):
+                            victim_request.restart_decode()
+                        else:
+                            victim_request.restart()
                         self.free(victim_request.id)
-                        # put at the first of the request queue
-                        # self._request_queue = [victim_request] + self._request_queue
                         self.restart_requests.append(victim_request)
                     else:
                         # if no more preempted requests
-                        request.restart()
+                        if (self.kvcache_transfer_mode == "serialized-cpu"
+                            or self.kvcache_transfer_mode == "layer-wise-cpu"):
+                            request.restart_decode()
+                        else:
+                            request.restart()
                         self.free(request.id)
-                        # self._request_queue = [request] + self._request_queue
                         self.restart_requests.append(request)
                         break
                 else:
@@ -156,8 +193,10 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
             kvcache_transfers_in_progress = []
             while self._request_queue:
                 request = self._request_queue[0]
-                if (self.kvcache_transfer_mode == "serialized-push" or
-                    self.kvcache_transfer_mode == "layer-wise" ) \
+                if (self.kvcache_transfer_mode == "serialized" or
+                    self.kvcache_transfer_mode == "layer-wise" or
+                    self.kvcache_transfer_mode == "serialized-cpu" or
+                    self.kvcache_transfer_mode == "layer-wise-cpu") \
                     and not request.kvcache_transfered:
                     request = self._request_queue.pop(0)
                     kvcache_transfers_in_progress.append(request)
@@ -165,7 +204,10 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
 
                 next_num_tokens = self._get_request_next_num_tokens(request)
 
-                if self.kvcache_transfer_mode == "pull" and not self._can_allocate_request(request):
+                if (self.kvcache_transfer_mode == "pull" or
+                    self.kvcache_transfer_mode == "serialized-cpu" or
+                    self.kvcache_transfer_mode == "layer-wise-cpu") \
+                    and not self._can_allocate_request(request):
                     break
 
                 new_num_tokens = num_tokens + [next_num_tokens]
@@ -181,18 +223,21 @@ class DisaggregationReplicaScheduler(BaseReplicaScheduler):
 
                 request = self._request_queue.pop(0)
 
-                if self.kvcache_transfer_mode == "pull":
+                if (self.kvcache_transfer_mode == "pull" or
+                    self.kvcache_transfer_mode == "serialized-cpu" or
+                    self.kvcache_transfer_mode == "layer-wise-cpu"):
                     self._allocate_request(request)
                     requests_without_kvcache.append(request)
 
                 requests.append(request)
                 num_tokens.append(next_num_tokens)
                 num_batch_tokens += next_num_tokens
-            for request in requests:
-                if request.id not in self._allocation_map:
-                    print(request.id)
             if not self.kvcache_transfer_mode == "pull":
                 self._request_queue = kvcache_transfers_in_progress + self._request_queue
+            if (self.kvcache_transfer_mode == "serialized-cpu"
+                or self.kvcache_transfer_mode == "layer-wise-cpu"):
+                self._request_queue = self.restart_requests + self._request_queue
+                self.clear_restart_requests()
             if requests:
                 return Batch(self._replica_id, requests, num_tokens, requests_without_kvcache)
 

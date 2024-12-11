@@ -44,11 +44,18 @@ class ReplicaStageScheduleEvent(BaseEvent):
         )
 
         self._is_last_stage = stage_scheduler.is_last_stage
-        if scheduler._kvcache_transfer_mode == "layer-wise":
-            for request in self._batch._requests:
-                request.kvcache_transfer_time = max(self.time, request.kvcache_transfer_time) \
-                    + execution_time.get_layer_wise_kvcache_transfer_time(request)
-
+        replica_scheduler = scheduler._replica_schedulers[self._replica_id]
+        if replica_scheduler._replica_type == "prompt":
+            if (scheduler._kvcache_transfer_mode == "layer-wise"):
+                for request in self._batch._requests:
+                    execution_time_predictor = scheduler.get_execution_time_predictor()
+                    kvcache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request, "gpu-gpu")
+                    request.kvcache_transfer_time["gpu-gpu"] = kvcache_transfer_time
+            if scheduler._kvcache_transfer_mode == "layer-wise-cpu":
+                for request in self._batch._requests:
+                    execution_time_predictor = scheduler.get_execution_time_predictor()
+                    kvcache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(request, "gpu-cpu")
+                    request.kvcache_transfer_time["gpu-cpu"] = kvcache_transfer_time
         return [
             BatchStageEndEvent(
                 self.time + self._batch_stage.execution_time,

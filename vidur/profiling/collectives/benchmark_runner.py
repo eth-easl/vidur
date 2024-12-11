@@ -80,14 +80,16 @@ class BenchmarkRunner:
     def _init_communication(
         self, comm_id: int, rank: int, num_workers: int, devices_per_node: int
     ):
+        backend = "nccl" if torch.cuda.is_available() and int(os.environ.get("CUDA_VISIBLE_DEVICES", -1)) >= 0 else "gloo"
         logger.info(
             f"Initializing gpu id: {self._gpu_id}, Rank: {rank}, num_workers: {num_workers}, comm_id: {comm_id}, "
             f"devices_per_node: {devices_per_node}, max_devices_per_node: {self._max_devices_per_node}, "
             f"ip_addr: {ray.util.get_node_ip_address()}, CUDA_VISIBLE_DEVICES: {os.environ['CUDA_VISIBLE_DEVICES']}"
+            f"Backend: {backend}"
         )
 
         torch.distributed.init_process_group(
-            backend="nccl",
+            backend=backend,
             rank=rank,
             world_size=num_workers,
             init_method=f"tcp://{self._head_ip}:{comm_id}",

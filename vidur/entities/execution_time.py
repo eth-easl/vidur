@@ -202,8 +202,9 @@ class ExecutionTime(BaseEntity):
 
     def get_layer_wise_kvcache_transfer_time(self, request) -> float:
         # return in seconds
-        block_execution_time = self._get_block_execution_time()
+        curr = request.kvcache_transfer_time["gpu-gpu"]
+        block_execution_time = self._get_block_execution_time() * 1e-3
         if self._kvcache_transfer_time_per_layer[request._id] < block_execution_time:
-            return self.total_time + self._kvcache_transfer_time_per_layer[request._id]
+            return self._kvcache_transfer_time_per_layer[request._id]
         else:
-            return block_execution_time + self._get_cpu_overhead() * 1e-3 + self._kvcache_transfer_time_per_layer[request._id] * self._num_layers_per_pipeline_stage
+            return (self._kvcache_transfer_time_per_layer[request._id] - block_execution_time) * self._num_layers_per_pipeline_stage + max(block_execution_time, curr) - self.pipeline_parallel_communication_time * 1e-3

@@ -22,10 +22,9 @@ class KVCacheTransferEndEvent(BaseEvent):
     ) -> List[BaseEvent]:
         from vidur.events.replica_schedule_event import ReplicaScheduleEvent
         assert self._request.is_prefill_complete
-        assert not self._request.kvcache_transfered
 
-        self._request.kvcache_transfered = True
-        if self._type == "gpu-gpu" or "gpu-cpu":
+        if self._type == "gpu-gpu":
+            self._request.kvcache_transfered = True
             prompt_replica_id = self._request.assigned_replicas["prompt"]
             prompt_replica_scheduler = scheduler.get_replica_scheduler(prompt_replica_id)
             assert prompt_replica_scheduler.replica_type == "prompt"
@@ -35,6 +34,33 @@ class KVCacheTransferEndEvent(BaseEvent):
                 ReplicaScheduleEvent(self.time, prompt_replica_id)
             ]
 
+        if self._type == "gpu-cpu":
+            prompt_replica_id = self._request.assigned_replicas["prompt"]
+            prompt_replica_scheduler = scheduler.get_replica_scheduler(prompt_replica_id)
+            prompt_replica_scheduler.free(self._request.id)
+            # check whether the cpu in token machine has memory
+            token_replica_id = self._request.assigned_replicas["token"]
+            token_replica_scheduler = scheduler.get_replica_scheduler(token_replica_id)
+            self._request.ready_for_transfer = True
+            if token_replica_scheduler._can_cpu_allocate_request(self._request):
+                token_replica_scheduler._cpu_allocate_request(self._request)
+                execution_time_predictor = scheduler.get_execution_time_predictor()
+                kvcache_transfer_time = execution_time_predictor.get_kvcache_transfer_time(self._request, "cpu-cpu")
+                self._request.kvcache_transfer_time["cpu-cpu"] = kvcache_transfer_time
+                return [
+                    KVCacheTransferEndEvent(self.time + kvcache_transfer_time, self._request, "cpu-cpu")
+                ]
+
+        if self._type == "cpu-cpu":
+            self._request.kvcache_transfered = True
+            prompt_replica_id = self._request.assigned_replicas["prompt"]
+            prompt_replica_scheduler = scheduler.get_replica_scheduler(prompt_replica_id)
+            prompt_replica_scheduler.free_cpu(self._request.id)
+            token_replica_id = self._request.assigned_replicas["token"]
+            return [
+                ReplicaScheduleEvent(self.time, token_replica_id)
+            ]
+        return []
     def to_dict(self):
         return {
             "time": self.time,
